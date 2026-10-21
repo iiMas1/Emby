@@ -84,31 +84,17 @@ updates within seconds. Make sure the Discord **desktop app** is running
    `python3 --version`. If macOS offers to install the Command Line Tools,
    accept — that includes Python. (Or install from
    [python.org/downloads](https://www.python.org/downloads/).)
-2. **Download and open the "Install Emby Presence" app** (from the ZIP
-   on the GitHub page). It is signed and notarized by Apple, so it opens
-   with no security warnings — allow it to control Terminal when macOS
-   asks. The app downloads the latest version into `~/Emby` by itself
-   and walks you through the prompts (Plex or Emby, sign in,
-   auto-start). That's it.
-
-   <details><summary>Prefer the terminal? Manual steps</summary>
+2. **Copy this one line into Terminal** (⌘-Space, type "Terminal"),
+   press Enter, and answer the prompts (Plex or Emby, sign in,
+   auto-start) — it downloads the latest version into `~/Emby` and sets
+   everything up, including starting automatically at login. That's it.
 
    ```bash
-   mkdir -p ~/Emby && cd ~/Emby
-   curl -fsSL https://codeload.github.com/iiMas1/Emby/tar.gz/refs/heads/master | tar xz --strip-components 1
-   bash Install.command
+   mkdir -p ~/Emby && cd ~/Emby && curl -fsSL https://codeload.github.com/iiMas1/Emby/tar.gz/refs/heads/master | tar xz --strip-components 1 && bash Install.command
    ```
-   </details>
 
-   <details><summary>Prefer the terminal? Manual steps</summary>
-
-   ```bash
-   python3 -m venv .venv
-   .venv/bin/pip install -r requirements.txt
-   .venv/bin/python setup.py
-   .venv/bin/python emby_discord_presence.py
-   ```
-   </details>
+   Running the same line again later updates to the latest version and
+   keeps your settings.
 
 ## Options
 
