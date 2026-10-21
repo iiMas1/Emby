@@ -84,21 +84,21 @@ updates within seconds. Make sure the Discord **desktop app** is running
    `python3 --version`. If macOS offers to install the Command Line Tools,
    accept — that includes Python. (Or install from
    [python.org/downloads](https://www.python.org/downloads/).)
-2. **Download this app:**
+2. **Download and open the "Install Emby Presence" app** (from the ZIP
+   on the GitHub page). It is signed and notarized by Apple, so it opens
+   with no security warnings — allow it to control Terminal when macOS
+   asks. The app downloads the latest version into `~/Emby` by itself
+   and walks you through the prompts (Plex or Emby, sign in,
+   auto-start). That's it.
+
+   <details><summary>Prefer the terminal? Manual steps</summary>
 
    ```bash
-   cd ~
-   git clone https://github.com/iiMas1/Emby.git
-   cd Emby
+   mkdir -p ~/Emby && cd ~/Emby
+   curl -fsSL https://codeload.github.com/iiMas1/Emby/tar.gz/refs/heads/master | tar xz --strip-components 1
+   bash Install.command
    ```
-
-   (No Git? Download the ZIP from GitHub, double-click to extract, then
-   `cd` into the extracted folder.)
-3. **Double-click the "Install Emby Presence" app** in the folder and
-   answer the prompts (Plex or Emby, sign in, auto-start) — it sets
-   everything up, starts the app, and can make it start automatically at
-   login. That's it. The app is signed and notarized by Apple, so it
-   opens with no security warnings.
+   </details>
 
    <details><summary>Prefer the terminal? Manual steps</summary>
 
