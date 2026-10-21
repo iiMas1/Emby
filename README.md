@@ -45,30 +45,77 @@ General Information page.
 *Optional:* under **Rich Presence → Art Assets**, upload an Emby logo with
 the asset name `emby` so your status shows a nice icon.
 
-**3. Configure**
+**3. Install on your computer**
 
-```bash
-git clone https://github.com/iiMas1/Emby.git
-cd Emby
-cp .env.example .env
-```
+Follow the section for your OS below, then play something on Emby — your
+status updates within ~15 seconds. Make sure the Discord **desktop app**
+is running (the browser version can't show Rich Presence).
 
-Open `.env` and fill in `EMBY_URL`, `EMBY_API_KEY`, `DISCORD_CLIENT_ID`,
-and your `EMBY_USERNAME` (so only your own playback shows up).
+### Install on Windows
 
-**4. Install and run**
+1. **Install Python** from [python.org/downloads](https://www.python.org/downloads/).
+   On the first installer screen, tick **"Add python.exe to PATH"** before
+   clicking Install.
+2. **Download this app:** on the GitHub page click the green **Code**
+   button → **Download ZIP**, and extract it somewhere permanent, e.g.
+   `C:\Emby` (or `git clone https://github.com/iiMas1/Emby.git` if you
+   have Git).
+3. **Open PowerShell in that folder:** open the folder in File Explorer,
+   then right-click an empty spot → **Open in Terminal**.
+4. **Set up and configure:**
 
-Needs [Python 3.9+](https://www.python.org/downloads/) — on Windows, tick
-"Add Python to PATH" during install.
+   ```powershell
+   py -m venv .venv
+   .venv\Scripts\pip install -r requirements.txt
+   copy .env.example .env
+   notepad .env
+   ```
 
-```bash
-pip install -r requirements.txt
-python emby_discord_presence.py
-```
+   In Notepad, fill in `EMBY_URL`, `EMBY_API_KEY`, `DISCORD_CLIENT_ID`,
+   and your `EMBY_USERNAME`, then save and close.
 
-Make sure the Discord **desktop app** is running (the browser version
-can't show Rich Presence), then play something on Emby. Your status
-updates within ~15 seconds.
+   > If `py -m venv .venv` says Python isn't found, reinstall Python and
+   > tick "Add python.exe to PATH", then open a new terminal.
+
+5. **Run it:**
+
+   ```powershell
+   .venv\Scripts\python emby_discord_presence.py
+   ```
+
+### Install on macOS
+
+1. **Check Python:** open **Terminal** (⌘-Space, type "Terminal") and run
+   `python3 --version`. If macOS offers to install the Command Line Tools,
+   accept — that includes Python. (Or install from
+   [python.org/downloads](https://www.python.org/downloads/).)
+2. **Download this app:**
+
+   ```bash
+   cd ~
+   git clone https://github.com/iiMas1/Emby.git
+   cd Emby
+   ```
+
+   (No Git? Download the ZIP from GitHub, double-click to extract, then
+   `cd` into the extracted folder.)
+3. **Set up and configure:**
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   cp .env.example .env
+   open -e .env
+   ```
+
+   TextEdit opens the config — fill in `EMBY_URL`, `EMBY_API_KEY`,
+   `DISCORD_CLIENT_ID`, and your `EMBY_USERNAME`, then save (⌘-S) and
+   close.
+4. **Run it:**
+
+   ```bash
+   .venv/bin/python emby_discord_presence.py
+   ```
 
 ## Options
 
@@ -87,16 +134,44 @@ activities with others" must be on.
 
 ## Run it automatically (optional)
 
-**Windows:** press `Win+R`, type `shell:startup`, and drop in a shortcut to
-a `start-emby-presence.bat` file containing:
+**Windows:** press `Win+R`, type `shell:startup`, press Enter, and create a
+file there named `emby-presence.bat` containing (adjust the path to where
+you put the app):
 
 ```bat
 @echo off
-cd /d C:\path\to\Emby
-pythonw emby_discord_presence.py
+cd /d C:\Emby
+start "" .venv\Scripts\pythonw.exe emby_discord_presence.py
 ```
 
-(`pythonw` runs it without a console window.)
+(`pythonw.exe` runs it in the background without a console window. To stop
+it, end the `pythonw.exe` process in Task Manager.)
+
+**macOS (launchd):** create
+`~/Library/LaunchAgents/com.emby.discordpresence.plist` (adjust both paths
+to where you put the app, replacing `YOURNAME`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.emby.discordpresence</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOURNAME/Emby/.venv/bin/python</string>
+    <string>emby_discord_presence.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/YOURNAME/Emby</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>
+```
+
+Then run `launchctl load ~/Library/LaunchAgents/com.emby.discordpresence.plist`.
+It now starts on every login; stop it with `launchctl unload` of the same file.
 
 **Linux (systemd user service):** create
 `~/.config/systemd/user/emby-discord-presence.service`:
