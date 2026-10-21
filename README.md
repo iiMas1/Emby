@@ -98,9 +98,12 @@ updates within seconds. Make sure the Discord **desktop app** is running
    prompts (Plex or Emby, sign in, auto-start) — it sets everything up,
    starts the app, and can make it start automatically at login. That's it.
 
-   > Downloaded as a ZIP? macOS may block the first double-click —
-   > right-click `Install.command` → **Open** → **Open** once, and it
-   > runs normally after that.
+   > Downloaded as a ZIP? macOS blocks the first double-click with an
+   > *"Install.command" Not Opened* dialog. Click **Done** (not Move to
+   > Trash), open **System Settings → Privacy & Security**, scroll down
+   > to the message about `Install.command`, and click **Open Anyway** —
+   > it runs normally from then on. (Cloning with `git` instead of
+   > downloading the ZIP avoids this entirely.)
 
    <details><summary>Prefer the terminal? Manual steps</summary>
 
