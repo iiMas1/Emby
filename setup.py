@@ -95,9 +95,13 @@ def setup_plex():
                              data={"strong": "true"}, timeout=10)
     response.raise_for_status()
     pin = response.json()
-    print("\n  1. Opening https://plex.tv/link in your browser...")
-    print(f"  2. Enter this code there:  {pin['code']}\n")
-    webbrowser.open("https://plex.tv/link")
+    auth_url = ("https://app.plex.tv/auth#?clientID="
+                + HEADERS["X-Plex-Client-Identifier"]
+                + "&code=" + pin["code"])
+    print("\nA Plex page is opening in your browser — sign in if needed and")
+    print("approve the link. No code to type.")
+    print(f"(If nothing opened, visit: {auth_url})\n")
+    webbrowser.open(auth_url)
 
     token = None
     for _ in range(120):  # up to ~10 minutes
