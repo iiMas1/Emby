@@ -1,0 +1,8 @@
+# Secrets — never commit your real config
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
