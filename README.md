@@ -1,6 +1,7 @@
-# Emby Discord Presence
+# Emby / Plex Discord Presence
 
-Show what you're currently watching on your Emby server as your Discord status.
+Show what you're currently watching on your **Emby or Plex** server as your
+Discord status.
 
 ```
 🎬 Playing Emby
@@ -11,29 +12,37 @@ Show what you're currently watching on your Emby server as your Discord status.
 - **Movies** → title and year, with a time-remaining countdown
 - **TV shows** → series name, season/episode, and episode title
 - **Music** → track and artist
-- **Artwork** → the real show poster / movie poster / album art on your
-  profile, when your Emby server is reachable over public https
-  (see `EMBY_PUBLIC_URL` in `.env.example`); otherwise the Emby logo
+- **Artwork** → on Emby, the real show poster / movie poster / album art,
+  when your server is reachable over public https (see `EMBY_PUBLIC_URL`
+  in `.env.example`); on Plex, the Plex logo — Plex image links require
+  your auth token inside the URL, and presence image URLs are visible to
+  other Discord users, so embedding it would leak access to your server
 - **Paused** → shows a ⏸ Paused indicator
 - Clears your status automatically when you stop playback
 
 ## How it works (and why it's secure)
 
 One small Python script runs on **the same computer as your Discord desktop
-app**. Every few seconds it asks your Emby server "what's playing?" and
+app**. Every few seconds it asks your media server "what's playing?" and
 updates your Discord status locally. That's it.
 
 - No bot, no Discord token, and nothing hosted on the internet
-- Your Emby API key stays in a local `.env` file that git ignores
-- The API key is sent as an HTTP header, never in the URL
-- Talks only to your own Emby server and the Discord app on your PC
+- Your Emby API key / Plex token stays in a local `.env` file that git ignores
+- The key/token is sent as an HTTP header, never in a URL
+- Talks only to your own media server and the Discord app on your PC
 
 ## Setup (5 minutes)
 
-**1. Get an Emby API key**
+**1. Get your server credentials**
 
-Emby Dashboard → **Advanced** → **API Keys** → **New API Key**. Name it
-`discord-presence` so you can revoke it later if you ever want to.
+- **Emby:** Emby Dashboard → **Advanced** → **API Keys** → **New API Key**.
+  Name it `discord-presence` so you can revoke it later if you ever want to.
+- **Plex:** you need your Plex auth token — follow
+  [Plex's official guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token)
+  (play any item in the Plex web app → ⋯ → **Get Info** → **View XML** →
+  copy the `X-Plex-Token` value from the page's address). In `.env`, set
+  `SERVER_TYPE=plex` and fill in `PLEX_URL`, `PLEX_TOKEN`, and
+  `PLEX_USERNAME` instead of the Emby values.
 
 **2. Create a Discord application**
 
@@ -123,9 +132,10 @@ All options live in `.env`:
 
 | Setting | What it does | Default |
 |---|---|---|
-| `EMBY_USERNAME` | Only show playback from this Emby account | any account |
-| `EMBY_PUBLIC_URL` | Public https address of your server, used for poster art | empty |
-| `SHOW_ARTWORK` | `false` = never show poster art | `true` |
+| `SERVER_TYPE` | `emby` or `plex` | `emby` |
+| `EMBY_USERNAME` / `PLEX_USERNAME` | Only show playback from this account | any account |
+| `EMBY_PUBLIC_URL` | Public https address of your Emby server, used for poster art | empty |
+| `SHOW_ARTWORK` | `false` = never show poster art (Emby only) | `true` |
 | `POLL_INTERVAL` | Seconds between checks (min 5) | `15` |
 | `HIDE_DETAILS` | `true` = show only "Watching a movie", no titles | `false` |
 
