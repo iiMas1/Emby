@@ -12,14 +12,23 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 
+import certifi
 import requests
+import websocket
 from dotenv import load_dotenv
 from pypresence import Presence
 from pypresence.exceptions import DiscordError, DiscordNotFound, PipeClosed
 
 TICKS_PER_SECOND = 10_000_000  # Emby reports positions in 100-nanosecond ticks
+
+# Built-in Discord application ("Plex"), so no developer-portal setup is
+# needed. Application IDs are public by design — set DISCORD_CLIENT_ID in
+# .env to use your own application instead (its name is what Discord shows
+# when no richer title is available, so Emby users may prefer their own).
+DEFAULT_DISCORD_CLIENT_ID = "1562553954737594490"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,11 +47,17 @@ def load_config():
         log.error("SERVER_TYPE must be 'emby' or 'plex', not %r", server_type)
         sys.exit(1)
 
+    try:
+        poll_interval = int(os.getenv("POLL_INTERVAL", "15"))
+    except ValueError:
+        log.warning("POLL_INTERVAL is not a number, using the default of 15s.")
+        poll_interval = 15
+
     config = {
         "server_type": server_type,
         "server_name": "Plex" if server_type == "plex" else "Emby",
-        "discord_client_id": os.getenv("DISCORD_CLIENT_ID", "").strip(),
-        "poll_interval": max(5, int(os.getenv("POLL_INTERVAL", "15"))),
+        "discord_client_id": os.getenv("DISCORD_CLIENT_ID", "").strip() or DEFAULT_DISCORD_CLIENT_ID,
+        "poll_interval": max(5, poll_interval),
         "hide_details": os.getenv("HIDE_DETAILS", "false").lower() in ("1", "true", "yes"),
         "show_artwork": os.getenv("SHOW_ARTWORK", "true").lower() in ("1", "true", "yes"),
     }
@@ -51,6 +66,7 @@ def load_config():
         config["url"] = os.getenv("PLEX_URL", "").rstrip("/")
         config["token"] = os.getenv("PLEX_TOKEN", "")
         config["username"] = os.getenv("PLEX_USERNAME", "").strip()
+        config["device_id"] = os.getenv("PLEX_DEVICE_ID", "").strip().lower()
         required = (("PLEX_URL", "url"), ("PLEX_TOKEN", "token"))
     else:
         config["url"] = os.getenv("EMBY_URL", "").rstrip("/")
@@ -59,8 +75,6 @@ def load_config():
         required = (("EMBY_URL", "url"), ("EMBY_API_KEY", "token"))
 
     missing = [name for name, key in required if not config[key]]
-    if not config["discord_client_id"]:
-        missing.append("DISCORD_CLIENT_ID")
     if missing:
         log.error("Missing required settings: %s", ", ".join(missing))
         log.error("Copy .env.example to .env and fill in your values.")
@@ -230,6 +244,29 @@ def fetch_emby(config):
     return None
 
 
+def plex_now_playing(item, config, position_ms, is_paused):
+    """Normalize one Plex metadata item into the shared now-playing shape."""
+    plex_type = item.get("type", "")
+    media_type = {"movie": "Movie", "episode": "Episode", "track": "Audio"}.get(plex_type, plex_type)
+    runtime = item.get("duration")
+    return {
+        "media_type": media_type,
+        "title": item.get("title", "Unknown"),
+        "series": item.get("grandparentTitle"),
+        "season": item.get("parentIndex"),
+        "episode": item.get("index"),
+        "year": item.get("year"),
+        # For music, Plex puts the artist in grandparentTitle and the
+        # album in parentTitle.
+        "artists": [item["grandparentTitle"]] if media_type == "Audio" and item.get("grandparentTitle") else [],
+        "album": item.get("parentTitle") if media_type == "Audio" else None,
+        "is_paused": is_paused,
+        "position_s": position_ms // 1000 if position_ms is not None else None,  # Plex uses milliseconds
+        "runtime_s": runtime // 1000 if runtime else None,
+        "artwork": plex_artwork(item, media_type, config),
+    }
+
+
 def fetch_plex(config):
     """Return the normalized now-playing state from Plex, or None.
 
@@ -244,31 +281,118 @@ def fetch_plex(config):
     response.raise_for_status()
 
     wanted_user = config["username"].lower()
+    wanted_device = config["device_id"]
     for item in response.json().get("MediaContainer", {}).get("Metadata", []):
         user = item.get("User", {}).get("title", "")
         if wanted_user and user.lower() != wanted_user:
             continue
-        plex_type = item.get("type", "")
-        media_type = {"movie": "Movie", "episode": "Episode", "track": "Audio"}.get(plex_type, plex_type)
-        position = item.get("viewOffset")
-        runtime = item.get("duration")
-        return {
-            "media_type": media_type,
-            "title": item.get("title", "Unknown"),
-            "series": item.get("grandparentTitle"),
-            "season": item.get("parentIndex"),
-            "episode": item.get("index"),
-            "year": item.get("year"),
-            # For music, Plex puts the artist in grandparentTitle and the
-            # album in parentTitle.
-            "artists": [item["grandparentTitle"]] if media_type == "Audio" and item.get("grandparentTitle") else [],
-            "album": item.get("parentTitle") if media_type == "Audio" else None,
-            "is_paused": item.get("Player", {}).get("state") == "paused",
-            "position_s": position // 1000 if position is not None else None,  # Plex uses milliseconds
-            "runtime_s": runtime // 1000 if runtime else None,
-            "artwork": plex_artwork(item, media_type, config),
-        }
+        player = item.get("Player", {})
+        if wanted_device and player.get("machineIdentifier", "").lower() != wanted_device:
+            continue
+        return plex_now_playing(item, config, item.get("viewOffset"),
+                                player.get("state") == "paused")
     return None
+
+
+class PlexAlertListener:
+    """Playback state over the Plex notifications websocket.
+
+    Shared (non-admin) accounts get 403 from /status/sessions, but the
+    websocket still delivers that account's own playback events — the same
+    approach discord-rich-presence-plex uses. The token is sent as a
+    header, never in the URL.
+    """
+
+    STALE_AFTER_S = 90  # no updates for this long -> assume playback ended
+
+    def __init__(self, config):
+        self.config = config
+        self._lock = threading.Lock()
+        self._session = None
+        threading.Thread(target=self._run_forever, daemon=True).start()
+
+    def _run_forever(self):
+        url = self.config["url"].replace("http", "ws", 1) + "/:/websockets/notifications"
+        while True:
+            app = websocket.WebSocketApp(
+                url,
+                header={"X-Plex-Token": self.config["token"]},
+                on_message=self._on_message,
+            )
+            # Pings detect silently-dead connections (sleep, network change)
+            # that would otherwise hang forever without ever reconnecting.
+            app.run_forever(sslopt={"ca_certs": certifi.where()},
+                            ping_interval=30, ping_timeout=10)
+            log.warning("Plex websocket disconnected, reconnecting in 5s...")
+            time.sleep(5)
+
+    def _on_message(self, _app, message):
+        try:
+            container = json.loads(message).get("NotificationContainer", {})
+        except ValueError:
+            return
+        if container.get("type") != "playing":
+            return
+        wanted_device = self.config["device_id"]
+        for notif in container.get("PlaySessionStateNotification", []):
+            if wanted_device and notif.get("clientIdentifier", "").lower() != wanted_device:
+                continue
+            with self._lock:
+                if notif.get("state") == "stopped":
+                    self._session = None
+                else:
+                    self._session = {
+                        "rating_key": notif.get("ratingKey"),
+                        "state": notif.get("state"),
+                        "position_ms": notif.get("viewOffset"),
+                        "seen_at": time.monotonic(),
+                    }
+
+    def current(self):
+        """Latest playback event, or None once it has gone stale."""
+        with self._lock:
+            session = self._session
+        if not session:
+            return None
+        age = time.monotonic() - session["seen_at"]
+        if age > self.STALE_AFTER_S:
+            return None
+        if session["state"] == "playing" and session["position_ms"] is not None:
+            # Notifications only arrive every ~10s; extrapolate the position
+            # in between so the Discord countdown doesn't jump around.
+            session = {**session, "position_ms": session["position_ms"] + int(age * 1000)}
+        return session
+
+
+_plex_metadata_cache = {}
+
+
+def fetch_plex_alerts(config, listener):
+    """Like fetch_plex, but driven by websocket events (shared accounts)."""
+    session = listener.current()
+    if not session or not session.get("rating_key"):
+        return None
+
+    rating_key = session["rating_key"]
+    item = _plex_metadata_cache.get(rating_key)
+    if item is None:
+        response = requests.get(
+            f"{config['url']}/library/metadata/{rating_key}",
+            headers={"X-Plex-Token": config["token"], "Accept": "application/json"},
+            timeout=10,
+        )
+        if response.status_code == 404:  # item deleted from the library
+            return None
+        response.raise_for_status()
+        metadata = response.json().get("MediaContainer", {}).get("Metadata", [])
+        if not metadata:
+            return None
+        item = metadata[0]
+        _plex_metadata_cache.clear()  # only the current item is ever needed
+        _plex_metadata_cache[rating_key] = item
+
+    return plex_now_playing(item, config, session["position_ms"],
+                            session["state"] == "paused")
 
 
 def clamp(text, fallback="Media"):
@@ -280,9 +404,17 @@ def clamp(text, fallback="Media"):
 
 
 def build_presence(now, config):
-    """Translate the normalized now-playing state into Discord fields."""
+    """Translate the normalized now-playing state into Discord fields.
+
+    With the default "Playing" activity type, Discord renders the activity
+    `name` as the bold line of the card, with `details` and `state` as two
+    lines under it — so the card reads: work title (bold), episode/year
+    info, then a ⏸ Paused line of its own while paused.
+    """
     media_type = now["media_type"]
 
+    name = None  # None -> Discord falls back to the application name
+    state = None
     if config["hide_details"]:
         generic = {
             "Movie": "Watching a movie",
@@ -291,26 +423,31 @@ def build_presence(now, config):
         }.get(media_type, "Watching something")
         details, state = generic, f"on {config['server_name']}"
     elif media_type == "Episode":
-        details = now["series"] or now["title"]
+        # Bold line = the series, detail line = season/episode and title.
+        name = now["series"] or now["title"]
         season, episode = now["season"], now["episode"]
         marker = f"S{season:02d}E{episode:02d}" if season is not None and episode is not None else ""
-        state = " · ".join(part for part in (marker, now["title"]) if part)
+        details = " · ".join(part for part in (marker, now["title"]) if part) or "Episode"
     elif media_type == "Audio":
-        details = now["title"]
+        name = now["title"]
         artists = ", ".join(now["artists"])
-        state = f"by {artists}" if artists else (now["album"] or "Music")
+        details = f"by {artists}" if artists else (now["album"] or "Music")
     else:  # Movie and anything else
-        details = now["title"]
-        state = f"({now['year']})" if now["year"] else "Movie"
+        name = now["title"]
+        details = f"({now['year']})" if now["year"] else "Movie"
+
+    if now["is_paused"]:
+        state = f"⏸ Paused · {state}" if state else "⏸ Paused"
 
     # Real poster/album art when available; never in privacy mode.
     image = None if config["hide_details"] else now["artwork"]
     logo = config["server_type"]  # Discord asset keys: "emby" and "plex"
     presence = {
+        "name": clamp(name) if name else None,
         "details": clamp(details),
-        "state": clamp(f"⏸ Paused · {state}" if now["is_paused"] else state),
+        "state": clamp(state) if state else None,
         "large_image": image or logo,
-        "large_text": clamp(config["server_name"] if config["hide_details"] else details),
+        "large_text": clamp(name or details),
         "small_image": logo if image else None,
         "small_text": config["server_name"] if image else None,
     }
@@ -342,9 +479,32 @@ def main():
     fetch_now_playing = fetch_plex if config["server_type"] == "plex" else fetch_emby
     log.info("Watching %s at %s (user filter: %s)",
              config["server_name"], config["url"], config["username"] or "any")
+    if config.get("device_id"):
+        log.info("Only showing playback from device %s", config["device_id"])
+
+    # Shared (non-admin) Plex accounts can't poll /status/sessions (403).
+    # The notifications websocket still reports the account's own playback,
+    # so switch to it automatically.
+    if config["server_type"] == "plex":
+        try:
+            probe = requests.get(
+                f"{config['url']}/status/sessions",
+                headers={"X-Plex-Token": config["token"], "Accept": "application/json"},
+                timeout=10,
+            )
+            if probe.status_code in (401, 403):
+                log.info("No admin access to sessions — using websocket notifications instead.")
+                listener = PlexAlertListener(config)
+                fetch_now_playing = lambda cfg: fetch_plex_alerts(cfg, listener)
+                # Events arrive pushed and reads are in-memory, so a fast
+                # tick costs nothing and reacts to pause/resume promptly.
+                config["poll_interval"] = min(config["poll_interval"], 3)
+        except requests.RequestException as error:
+            log.warning("Could not probe %s yet: %s", config["server_name"], error)
 
     rpc = connect_discord(config["discord_client_id"])
     last_shown = None
+    was_paused = False
 
     while True:
         try:
@@ -356,19 +516,26 @@ def main():
         try:
             if now:
                 presence = build_presence(now, config)
-                shown = (presence["details"], presence["state"])
+                shown = (presence.get("name", ""), presence["details"], presence.get("state", ""))
+                if now["is_paused"] and not was_paused:
+                    # Discord keeps counting down the previous end timestamp
+                    # on its own; a plain update doesn't always drop it.
+                    rpc.clear()
+                was_paused = now["is_paused"]
                 rpc.update(**presence)
                 if shown != last_shown:
-                    log.info("Now playing: %s — %s", *shown)
+                    log.info("Now playing: %s", " — ".join(part for part in shown if part))
                 last_shown = shown
             elif last_shown is not None:
                 rpc.clear()
                 log.info("Playback stopped, presence cleared.")
                 last_shown = None
+                was_paused = False
         except (PipeClosed, DiscordError, ConnectionError, BrokenPipeError):
             log.warning("Lost connection to Discord, reconnecting...")
             rpc = connect_discord(config["discord_client_id"])
             last_shown = None
+            was_paused = False
 
         time.sleep(config["poll_interval"])
 

@@ -33,32 +33,25 @@ updates your Discord status locally. That's it.
 
 ## Setup (5 minutes)
 
-**1. Get your server credentials**
+No tokens or API keys to hunt down — the interactive `setup.py` signs you
+in and writes the whole config for you:
 
-- **Emby:** Emby Dashboard → **Advanced** → **API Keys** → **New API Key**.
-  Name it `discord-presence` so you can revoke it later if you ever want to.
-- **Plex:** you need your Plex auth token — follow
-  [Plex's official guide](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token)
-  (play any item in the Plex web app → ⋯ → **Get Info** → **View XML** →
-  copy the `X-Plex-Token` value from the page's address). In `.env`, set
-  `SERVER_TYPE=plex` and fill in `PLEX_URL`, `PLEX_TOKEN`, and
-  `PLEX_USERNAME` instead of the Emby values.
+- **Plex:** opens plex.tv/link in your browser, you type a short code
+  there, and it discovers your servers automatically (works with shared
+  servers too — your password never touches the script).
+- **Emby:** asks for your server address and your normal Emby login, signs
+  in once, and keeps only the access token — the password is never stored.
+- **Discord:** nothing to do — a built-in Discord application ships with
+  the tool. (Optionally paste your own Application ID at the prompt to
+  control the fallback activity name and icon assets.)
 
-**2. Create a Discord application**
+*Optional, own-application users:* under **Rich Presence → Art Assets**,
+upload a logo named `emby` or `plex` so the status shows a nice icon when
+no poster is available.
 
-Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-→ **New Application**. The name you give it is what Discord shows as
-"Playing ..." — e.g. **Emby**. Copy the **Application ID** from the
-General Information page.
-
-*Optional:* under **Rich Presence → Art Assets**, upload an Emby logo with
-the asset name `emby` so your status shows a nice icon.
-
-**3. Install on your computer**
-
-Follow the section for your OS below, then play something on Emby — your
-status updates within ~15 seconds. Make sure the Discord **desktop app**
-is running (the browser version can't show Rich Presence).
+Follow the section for your OS below, then play something — your status
+updates within seconds. Make sure the Discord **desktop app** is running
+(the browser version can't show Rich Presence).
 
 ### Install on Windows
 
@@ -76,12 +69,11 @@ is running (the browser version can't show Rich Presence).
    ```powershell
    py -m venv .venv
    .venv\Scripts\pip install -r requirements.txt
-   copy .env.example .env
-   notepad .env
+   .venv\Scripts\python setup.py
    ```
 
-   In Notepad, fill in `EMBY_URL`, `EMBY_API_KEY`, `DISCORD_CLIENT_ID`,
-   and your `EMBY_USERNAME`, then save and close.
+   Answer the prompts (Plex or Emby, sign in, Discord Application ID) —
+   it writes the `.env` config for you.
 
    > If `py -m venv .venv` says Python isn't found, reinstall Python and
    > tick "Add python.exe to PATH", then open a new terminal.
@@ -113,13 +105,11 @@ is running (the browser version can't show Rich Presence).
    ```bash
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
-   cp .env.example .env
-   open -e .env
+   .venv/bin/python setup.py
    ```
 
-   TextEdit opens the config — fill in `EMBY_URL`, `EMBY_API_KEY`,
-   `DISCORD_CLIENT_ID`, and your `EMBY_USERNAME`, then save (⌘-S) and
-   close.
+   Answer the prompts (Plex or Emby, sign in, Discord Application ID) —
+   it writes the `.env` config for you.
 4. **Run it:**
 
    ```bash
@@ -213,7 +203,7 @@ Description=Emby Discord Presence
 
 [Service]
 WorkingDirectory=/path/to/Emby
-ExecStart=/usr/bin/python3 emby_discord_presence.py
+ExecStart=/path/to/Emby/.venv/bin/python emby_discord_presence.py
 Restart=on-failure
 
 [Install]
