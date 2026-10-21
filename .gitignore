@@ -1,6 +1,9 @@
 # Secrets — never commit your real config
 .env
 
+# Local cache of poster links already uploaded to Imgur
+artwork_cache.json
+
 # Python
 __pycache__/
 *.pyc

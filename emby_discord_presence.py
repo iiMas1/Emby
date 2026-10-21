@@ -8,6 +8,7 @@ Run this on the same computer where the Discord desktop app is running.
 All configuration lives in a local .env file — see .env.example.
 """
 
+import json
 import logging
 import os
 import sys
@@ -71,37 +72,121 @@ def load_config():
 
     # Discord's servers fetch the artwork, so the image URL must be reachable
     # from the internet over https, and the URL is visible to other Discord
-    # users. Emby serves images without authentication, so this is safe.
-    # Plex requires the auth token inside every image URL, which would leak
-    # it — Plex therefore always falls back to the static logo.
+    # users. Emby serves images without authentication, so linking directly
+    # to a public Emby server is safe. Plex requires the auth token inside
+    # every image URL, which would leak it — so Plex posters (and posters for
+    # LAN-only Emby servers) are instead re-hosted on Imgur when an
+    # IMGUR_CLIENT_ID is configured, and fall back to the static logo if not.
     artwork_base = ""
     if server_type == "emby":
         artwork_base = os.getenv("EMBY_PUBLIC_URL", "").rstrip("/") or config["url"]
     if not config["show_artwork"] or not artwork_base.startswith("https://"):
         artwork_base = ""
     config["artwork_base"] = artwork_base
+    config["imgur_client_id"] = os.getenv("IMGUR_CLIENT_ID", "").strip()
 
     return config
 
 
-def emby_artwork_url(item, base):
-    """Public URL of the show poster / movie poster / album art, or None.
+ARTWORK_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "artwork_cache.json")
+_artwork_cache = None
+_artwork_failures = set()
 
-    Emby serves item images without authentication, so no API key ever
-    appears in this URL. Discord caps asset URLs at 256 characters.
+
+def imgur_artwork(config, cache_key, image_url, headers):
+    """Re-host one poster on Imgur and return its public link, or None.
+
+    The image is downloaded from the media server with the token in a
+    header, then uploaded anonymously (as an unlisted image) to Imgur —
+    only the picture leaves your network, never the token. Each poster is
+    uploaded once and remembered in artwork_cache.json.
     """
-    if not base:
+    global _artwork_cache
+    if _artwork_cache is None:
+        try:
+            with open(ARTWORK_CACHE_FILE) as cache_file:
+                _artwork_cache = json.load(cache_file)
+        except (OSError, ValueError):
+            _artwork_cache = {}
+    if cache_key in _artwork_cache:
+        return _artwork_cache[cache_key]
+    if cache_key in _artwork_failures:  # don't retry a bad poster every poll
         return None
+
+    try:
+        image = requests.get(image_url, headers=headers, timeout=15)
+        image.raise_for_status()
+        upload = requests.post(
+            "https://api.imgur.com/3/image",
+            headers={"Authorization": f"Client-ID {config['imgur_client_id']}"},
+            files={"image": image.content},
+            timeout=30,
+        )
+        upload.raise_for_status()
+        link = upload.json()["data"]["link"]
+    except (requests.RequestException, ValueError, KeyError) as error:
+        log.warning("Could not upload poster to Imgur: %s", error)
+        _artwork_failures.add(cache_key)
+        return None
+
+    _artwork_cache[cache_key] = link
+    try:
+        with open(ARTWORK_CACHE_FILE, "w") as cache_file:
+            json.dump(_artwork_cache, cache_file, indent=1)
+    except OSError as error:
+        log.warning("Could not save artwork cache: %s", error)
+    log.info("Poster uploaded to Imgur: %s", link)
+    return link
+
+
+def emby_artwork(item, config):
+    """URL of the show poster / movie poster / album art, or None.
+
+    A public https Emby server is linked directly — Emby serves item images
+    without authentication, so no API key ever appears in the URL. A
+    LAN-only server's posters are re-hosted on Imgur instead (when
+    configured). Discord caps asset URLs at 256 characters.
+    """
     if item.get("Type") == "Episode" and item.get("SeriesId") and item.get("SeriesPrimaryImageTag"):
         item_id, tag = item["SeriesId"], item["SeriesPrimaryImageTag"]  # show poster
-    elif item.get("ImageTags", {}).get("Primary"):
-        item_id, tag = item.get("Id"), item["ImageTags"]["Primary"]
+    elif item.get("ImageTags", {}).get("Primary") and item.get("Id"):
+        item_id, tag = item["Id"], item["ImageTags"]["Primary"]
     elif item.get("AlbumId") and item.get("AlbumPrimaryImageTag"):
         item_id, tag = item["AlbumId"], item["AlbumPrimaryImageTag"]  # album art
     else:
         return None
-    url = f"{base}/emby/Items/{item_id}/Images/Primary?tag={tag}&maxHeight=512&quality=90"
-    return url if item_id and len(url) <= 256 else None
+
+    image_path = f"/emby/Items/{item_id}/Images/Primary?tag={tag}&maxHeight=512&quality=90"
+    if config["artwork_base"]:
+        url = f"{config['artwork_base']}{image_path}"
+        return url if len(url) <= 256 else None
+    if config["imgur_client_id"] and config["show_artwork"] and not config["hide_details"]:
+        return imgur_artwork(config, f"emby-{item_id}-{tag}",
+                             f"{config['url']}{image_path}",
+                             {"X-Emby-Token": config["token"]})
+    return None
+
+
+def plex_artwork(item, media_type, config):
+    """Imgur URL of the show poster / movie poster / album art, or None.
+
+    Plex image links only work with the auth token embedded, so they are
+    never handed to Discord directly — see imgur_artwork.
+    """
+    if not config["imgur_client_id"] or not config["show_artwork"] or config["hide_details"]:
+        return None
+    if media_type == "Episode":
+        path = item.get("grandparentThumb") or item.get("thumb")  # show poster
+        key = item.get("grandparentRatingKey") or item.get("ratingKey")
+    elif media_type == "Audio":
+        path = item.get("parentThumb") or item.get("thumb")  # album art
+        key = item.get("parentRatingKey") or item.get("ratingKey")
+    else:
+        path, key = item.get("thumb"), item.get("ratingKey")
+    if not path or not key:
+        return None
+    return imgur_artwork(config, f"plex-{key}", f"{config['url']}{path}",
+                         {"X-Plex-Token": config["token"]})
 
 
 def fetch_emby(config):
@@ -140,7 +225,7 @@ def fetch_emby(config):
             "is_paused": play_state.get("IsPaused", False),
             "position_s": position // TICKS_PER_SECOND if position is not None else None,
             "runtime_s": runtime // TICKS_PER_SECOND if runtime else None,
-            "artwork": emby_artwork_url(item, config["artwork_base"]),
+            "artwork": emby_artwork(item, config),
         }
     return None
 
@@ -181,7 +266,7 @@ def fetch_plex(config):
             "is_paused": item.get("Player", {}).get("state") == "paused",
             "position_s": position // 1000 if position is not None else None,  # Plex uses milliseconds
             "runtime_s": runtime // 1000 if runtime else None,
-            "artwork": None,  # see load_config: Plex image URLs would leak the token
+            "artwork": plex_artwork(item, media_type, config),
         }
     return None
 

@@ -12,11 +12,11 @@ Discord status.
 - **Movies** → title and year, with a time-remaining countdown
 - **TV shows** → series name, season/episode, and episode title
 - **Music** → track and artist
-- **Artwork** → on Emby, the real show poster / movie poster / album art,
-  when your server is reachable over public https (see `EMBY_PUBLIC_URL`
-  in `.env.example`); on Plex, the Plex logo — Plex image links require
-  your auth token inside the URL, and presence image URLs are visible to
-  other Discord users, so embedding it would leak access to your server
+- **Artwork** → the real show poster / movie poster / album art on your
+  profile. A public https Emby server is linked directly; Plex and
+  LAN-only Emby servers re-host posters on Imgur instead (set
+  `IMGUR_CLIENT_ID` in `.env` — see below). Without either, you get the
+  server logo.
 - **Paused** → shows a ⏸ Paused indicator
 - Clears your status automatically when you stop playback
 
@@ -135,8 +135,29 @@ All options live in `.env`:
 | `SERVER_TYPE` | `emby` or `plex` | `emby` |
 | `EMBY_USERNAME` / `PLEX_USERNAME` | Only show playback from this account | any account |
 | `EMBY_PUBLIC_URL` | Public https address of your Emby server, used for poster art | empty |
-| `SHOW_ARTWORK` | `false` = never show poster art (Emby only) | `true` |
+| `IMGUR_CLIENT_ID` | Enables poster art for Plex / LAN-only Emby (see below) | empty |
+| `SHOW_ARTWORK` | `false` = never show poster art | `true` |
 | `POLL_INTERVAL` | Seconds between checks (min 5) | `15` |
+
+### Poster art via Imgur (Plex, or Emby without a public URL)
+
+Discord's servers have to fetch the poster image themselves, and the image
+URL is visible to other Discord users. Plex image links only work with your
+auth token embedded in them, so handing them to Discord would leak access to
+your server — and a LAN-only Emby server simply isn't reachable by Discord
+at all. The fix: the script downloads the poster locally (token stays in a
+header) and re-hosts **just the picture** on Imgur as an anonymous unlisted
+image, once per show/movie/album (cached in `artwork_cache.json`).
+
+Setup (2 minutes): register an application at
+[api.imgur.com/oauth2/addclient](https://api.imgur.com/oauth2/addclient)
+(choose the option without a callback URL), then put the **Client ID** —
+not the client secret — into `IMGUR_CLIENT_ID` in your `.env`.
+
+Privacy note: uploaded posters are unlisted but technically public images
+on Imgur. It's only cover art, never your token, titles, or account info —
+but if you don't want that, leave `IMGUR_CLIENT_ID` empty and you'll get
+the server logo instead.
 | `HIDE_DETAILS` | `true` = show only "Watching a movie", no titles | `false` |
 
 Also check Discord → **Settings → Activity Privacy** → "Share your detected
