@@ -30,6 +30,12 @@ TICKS_PER_SECOND = 10_000_000  # Emby reports positions in 100-nanosecond ticks
 # when no richer title is available, so Emby users may prefer their own).
 DEFAULT_DISCORD_CLIENT_ID = "1562553954737594490"
 
+# Built-in Imgur application for poster re-hosting, so artwork works with
+# no setup. Imgur client IDs are public identifiers (they ship in every
+# open-source app that uploads anonymously); set IMGUR_CLIENT_ID in .env
+# to use your own, or SHOW_ARTWORK=false to disable artwork entirely.
+DEFAULT_IMGUR_CLIENT_ID = "5cae6775116c078"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -97,7 +103,7 @@ def load_config():
     if not config["show_artwork"] or not artwork_base.startswith("https://"):
         artwork_base = ""
     config["artwork_base"] = artwork_base
-    config["imgur_client_id"] = os.getenv("IMGUR_CLIENT_ID", "").strip()
+    config["imgur_client_id"] = os.getenv("IMGUR_CLIENT_ID", "").strip() or DEFAULT_IMGUR_CLIENT_ID
 
     return config
 

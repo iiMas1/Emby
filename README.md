@@ -133,9 +133,10 @@ at all. The fix: the script downloads the poster locally (token stays in a
 header) and re-hosts **just the picture** on Imgur as an anonymous unlisted
 image, once per show/movie/album (cached in `artwork_cache.json`).
 
-Setup (2 minutes): register an application at
+No setup needed — a built-in Imgur application ships with the tool. To
+use your own instead, register one at
 [api.imgur.com/oauth2/addclient](https://api.imgur.com/oauth2/addclient)
-(choose the option without a callback URL), then put the **Client ID** —
+(choose the option without a callback URL) and put the **Client ID** —
 not the client secret — into `IMGUR_CLIENT_ID` in your `.env`.
 
 Privacy note: uploaded posters are unlisted but technically public images
