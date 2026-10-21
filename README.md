@@ -64,27 +64,19 @@ updates within seconds. Make sure the Discord **desktop app** is running
    button → **Download ZIP**, and extract it somewhere permanent, e.g.
    `C:\Emby` (or `git clone https://github.com/iiMas1/Emby.git` if you
    have Git).
-3. **Open PowerShell in that folder:** open the folder in File Explorer,
-   then right-click an empty spot → **Open in Terminal**.
-4. **Set up and configure:**
+3. **Double-click `install.bat`** and answer the prompts (Plex or Emby,
+   sign in, auto-start) — it sets everything up, starts the app, and can
+   make it start automatically every time you log on. That's it.
+
+   <details><summary>Prefer the terminal? Manual steps</summary>
 
    ```powershell
    py -m venv .venv
    .venv\Scripts\pip install -r requirements.txt
    .venv\Scripts\python setup.py
-   ```
-
-   Answer the prompts (Plex or Emby, sign in, Discord Application ID) —
-   it writes the `.env` config for you.
-
-   > If `py -m venv .venv` says Python isn't found, reinstall Python and
-   > tick "Add python.exe to PATH", then open a new terminal.
-
-5. **Run it:**
-
-   ```powershell
    .venv\Scripts\python emby_discord_presence.py
    ```
+   </details>
 
 ### Install on macOS
 
@@ -102,21 +94,23 @@ updates within seconds. Make sure the Discord **desktop app** is running
 
    (No Git? Download the ZIP from GitHub, double-click to extract, then
    `cd` into the extracted folder.)
-3. **Set up and configure:**
+3. **Double-click `Install.command`** in the folder and answer the
+   prompts (Plex or Emby, sign in, auto-start) — it sets everything up,
+   starts the app, and can make it start automatically at login. That's it.
+
+   > Downloaded as a ZIP? macOS may block the first double-click —
+   > right-click `Install.command` → **Open** → **Open** once, and it
+   > runs normally after that.
+
+   <details><summary>Prefer the terminal? Manual steps</summary>
 
    ```bash
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    .venv/bin/python setup.py
-   ```
-
-   Answer the prompts (Plex or Emby, sign in, Discord Application ID) —
-   it writes the `.env` config for you.
-4. **Run it:**
-
-   ```bash
    .venv/bin/python emby_discord_presence.py
    ```
+   </details>
 
 ## Options
 
@@ -156,6 +150,9 @@ Also check Discord → **Settings → Activity Privacy** → "Share your detecte
 activities with others" must be on.
 
 ## Run it automatically (optional)
+
+The Windows and macOS installers already offer this — the steps below are
+only for Linux or manual setups.
 
 **Windows:** press `Win+R`, type `shell:startup`, press Enter, and create a
 file there named `emby-presence.bat` containing (adjust the path to where
