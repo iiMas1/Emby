@@ -19,7 +19,7 @@ import certifi
 import requests
 import websocket
 from dotenv import load_dotenv
-from pypresence import Presence
+from pypresence import ActivityType, Presence
 from pypresence.exceptions import DiscordError, DiscordNotFound, PipeClosed
 
 TICKS_PER_SECOND = 10_000_000  # Emby reports positions in 100-nanosecond ticks
@@ -406,14 +406,17 @@ def clamp(text, fallback="Media"):
 def build_presence(now, config):
     """Translate the normalized now-playing state into Discord fields.
 
-    With the default "Playing" activity type, Discord renders the activity
-    `name` as the bold line of the card, with `details` and `state` as two
-    lines under it — so the card reads: work title (bold), episode/year
-    info, then a ⏸ Paused line of its own while paused.
+    Spotify-style card: a "Watching <work title>" (or "Listening to ...")
+    header, the episode/year detail as the bold line, and a progress bar
+    with elapsed/total times from the start+end timestamps. Paused
+    playback never reaches here — the presence is hidden entirely, just
+    like Spotify does when you pause.
     """
     media_type = now["media_type"]
 
-    name = None  # None -> Discord falls back to the application name
+    # An invisible activity name keeps the card header a bare "Watching" /
+    # "Listening to", so the work's title leads the card body instead.
+    name = "⠀"
     state = None
     if config["hide_details"]:
         generic = {
@@ -424,39 +427,38 @@ def build_presence(now, config):
         details, state = generic, f"on {config['server_name']}"
     elif media_type == "Episode":
         # Bold line = the series, detail line = season/episode and title.
-        name = now["series"] or now["title"]
+        details = now["series"] or now["title"]
         season, episode = now["season"], now["episode"]
         marker = f"S{season:02d}E{episode:02d}" if season is not None and episode is not None else ""
-        details = " · ".join(part for part in (marker, now["title"]) if part) or "Episode"
+        state = " · ".join(part for part in (marker, now["title"]) if part) or "Episode"
     elif media_type == "Audio":
-        name = now["title"]
+        details = now["title"]
         artists = ", ".join(now["artists"])
-        details = f"by {artists}" if artists else (now["album"] or "Music")
+        state = f"by {artists}" if artists else (now["album"] or "Music")
     else:  # Movie and anything else
-        name = now["title"]
-        details = f"({now['year']})" if now["year"] else "Movie"
-
-    if now["is_paused"]:
-        state = f"⏸ Paused · {state}" if state else "⏸ Paused"
+        details = now["title"]
+        state = f"({now['year']})" if now["year"] else "Movie"
 
     # Real poster/album art when available; never in privacy mode.
     image = None if config["hide_details"] else now["artwork"]
     logo = config["server_type"]  # Discord asset keys: "emby" and "plex"
     presence = {
+        "activity_type": ActivityType.LISTENING if media_type == "Audio" else ActivityType.WATCHING,
         "name": clamp(name) if name else None,
         "details": clamp(details),
         "state": clamp(state) if state else None,
         "large_image": image or logo,
-        "large_text": clamp(name or details),
+        "large_text": clamp(details),
         "small_image": logo if image else None,
         "small_text": config["server_name"] if image else None,
     }
     presence = {key: value for key, value in presence.items() if value is not None}
 
-    # Show a "time remaining" countdown while actively playing.
-    if not now["is_paused"] and now["position_s"] is not None and now["runtime_s"]:
-        remaining = max(0, now["runtime_s"] - now["position_s"])
-        presence["end"] = int(time.time()) + remaining
+    # Spotify-style progress bar: start+end together render elapsed/total.
+    if now["position_s"] is not None and now["runtime_s"]:
+        started = int(time.time()) - now["position_s"]
+        presence["start"] = started
+        presence["end"] = started + now["runtime_s"]
 
     return presence
 
@@ -504,7 +506,6 @@ def main():
 
     rpc = connect_discord(config["discord_client_id"])
     last_shown = None
-    was_paused = False
 
     while True:
         try:
@@ -513,29 +514,28 @@ def main():
             log.warning("Could not reach %s: %s", config["server_name"], error)
             now = None
 
+        # Spotify-style: pausing hides the presence entirely instead of
+        # showing a frozen card with a drifting progress bar.
+        if now and now["is_paused"]:
+            now = None
+
         try:
             if now:
                 presence = build_presence(now, config)
                 shown = (presence.get("name", ""), presence["details"], presence.get("state", ""))
-                if now["is_paused"] and not was_paused:
-                    # Discord keeps counting down the previous end timestamp
-                    # on its own; a plain update doesn't always drop it.
-                    rpc.clear()
-                was_paused = now["is_paused"]
                 rpc.update(**presence)
                 if shown != last_shown:
-                    log.info("Now playing: %s", " — ".join(part for part in shown if part))
+                    log.info("Now playing: %s",
+                             " — ".join(part for part in shown if part.strip("⠀ ")))
                 last_shown = shown
             elif last_shown is not None:
                 rpc.clear()
-                log.info("Playback stopped, presence cleared.")
+                log.info("Playback stopped or paused, presence cleared.")
                 last_shown = None
-                was_paused = False
         except (PipeClosed, DiscordError, ConnectionError, BrokenPipeError):
             log.warning("Lost connection to Discord, reconnecting...")
             rpc = connect_discord(config["discord_client_id"])
             last_shown = None
-            was_paused = False
 
         time.sleep(config["poll_interval"])
 

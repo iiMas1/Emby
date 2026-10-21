@@ -4,21 +4,23 @@ Show what you're currently watching on your **Emby or Plex** server as your
 Discord status.
 
 ```
-🎬 Playing Emby
+Watching
    Breaking Bad
-   S02E07 · Negro y Azul        ⏱ 32:14 left
+   S02E07 · Negro y Azul
+   ▶ ━━━●─────── 12:46 / 47:12
 ```
 
-- **Movies** → title and year, with a time-remaining countdown
-- **TV shows** → series name, season/episode, and episode title
-- **Music** → track and artist
+- **TV shows** → series name in bold, season/episode and title under it,
+  and a Spotify-style progress bar with elapsed/total times
+- **Movies** → title and year, same progress bar
+- **Music** → shows as **Listening**, with track and artist
 - **Artwork** → the real show poster / movie poster / album art on your
   profile. A public https Emby server is linked directly; Plex and
   LAN-only Emby servers re-host posters on Imgur instead (set
   `IMGUR_CLIENT_ID` in `.env` — see below). Without either, you get the
   server logo.
-- **Paused** → shows a ⏸ Paused indicator
-- Clears your status automatically when you stop playback
+- **Paused or stopped** → the status disappears, just like Spotify, and
+  comes back when you resume
 
 ## How it works (and why it's secure)
 
