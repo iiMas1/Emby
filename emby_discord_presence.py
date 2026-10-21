@@ -34,12 +34,22 @@ def load_config():
 
     config = {
         "emby_url": os.getenv("EMBY_URL", "").rstrip("/"),
+        "emby_public_url": os.getenv("EMBY_PUBLIC_URL", "").rstrip("/"),
         "emby_api_key": os.getenv("EMBY_API_KEY", ""),
         "emby_username": os.getenv("EMBY_USERNAME", "").strip(),
         "discord_client_id": os.getenv("DISCORD_CLIENT_ID", "").strip(),
         "poll_interval": max(5, int(os.getenv("POLL_INTERVAL", "15"))),
         "hide_details": os.getenv("HIDE_DETAILS", "false").lower() in ("1", "true", "yes"),
+        "show_artwork": os.getenv("SHOW_ARTWORK", "true").lower() in ("1", "true", "yes"),
     }
+
+    # Discord's servers fetch the artwork, so the image URL must be reachable
+    # from the internet over https. Use EMBY_PUBLIC_URL if given, otherwise
+    # EMBY_URL when it's already https; LAN-only http servers get no artwork.
+    artwork_base = config["emby_public_url"] or config["emby_url"]
+    if not config["show_artwork"] or not artwork_base.startswith("https://"):
+        artwork_base = ""
+    config["artwork_base"] = artwork_base
 
     missing = [
         name
@@ -93,6 +103,26 @@ def clamp(text, fallback="Emby"):
     return text[:128]
 
 
+def artwork_url(item, base):
+    """Public URL of the show poster / movie poster / album art, or None.
+
+    Emby serves item images without authentication, so no API key ever
+    appears in this URL. Discord caps asset URLs at 256 characters.
+    """
+    if not base:
+        return None
+    if item.get("Type") == "Episode" and item.get("SeriesId") and item.get("SeriesPrimaryImageTag"):
+        item_id, tag = item["SeriesId"], item["SeriesPrimaryImageTag"]  # show poster
+    elif item.get("ImageTags", {}).get("Primary"):
+        item_id, tag = item.get("Id"), item["ImageTags"]["Primary"]
+    elif item.get("AlbumId") and item.get("AlbumPrimaryImageTag"):
+        item_id, tag = item["AlbumId"], item["AlbumPrimaryImageTag"]  # album art
+    else:
+        return None
+    url = f"{base}/emby/Items/{item_id}/Images/Primary?tag={tag}&maxHeight=512&quality=90"
+    return url if item_id and len(url) <= 256 else None
+
+
 def build_presence(session, config):
     """Translate an Emby session into Discord Rich Presence fields."""
     item = session["NowPlayingItem"]
@@ -122,12 +152,17 @@ def build_presence(session, config):
         year = item.get("ProductionYear")
         state = f"({year})" if year else "Movie"
 
+    # Real poster/album art when available; never in privacy mode.
+    image = None if config["hide_details"] else artwork_url(item, config["artwork_base"])
     presence = {
         "details": clamp(details),
         "state": clamp(f"⏸ Paused · {state}" if is_paused else state),
-        "large_image": "emby",
-        "large_text": "Emby",
+        "large_image": image or "emby",
+        "large_text": clamp("Emby" if config["hide_details"] else details),
+        "small_image": "emby" if image else None,
+        "small_text": "Emby" if image else None,
     }
+    presence = {key: value for key, value in presence.items() if value is not None}
 
     # Show a "time remaining" countdown while actively playing.
     position = play_state.get("PositionTicks")

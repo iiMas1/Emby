@@ -11,6 +11,9 @@ Show what you're currently watching on your Emby server as your Discord status.
 - **Movies** → title and year, with a time-remaining countdown
 - **TV shows** → series name, season/episode, and episode title
 - **Music** → track and artist
+- **Artwork** → the real show poster / movie poster / album art on your
+  profile, when your Emby server is reachable over public https
+  (see `EMBY_PUBLIC_URL` in `.env.example`); otherwise the Emby logo
 - **Paused** → shows a ⏸ Paused indicator
 - Clears your status automatically when you stop playback
 
@@ -74,6 +77,8 @@ All options live in `.env`:
 | Setting | What it does | Default |
 |---|---|---|
 | `EMBY_USERNAME` | Only show playback from this Emby account | any account |
+| `EMBY_PUBLIC_URL` | Public https address of your server, used for poster art | empty |
+| `SHOW_ARTWORK` | `false` = never show poster art | `true` |
 | `POLL_INTERVAL` | Seconds between checks (min 5) | `15` |
 | `HIDE_DETAILS` | `true` = show only "Watching a movie", no titles | `false` |
 
