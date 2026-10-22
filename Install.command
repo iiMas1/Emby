@@ -55,6 +55,12 @@ case "$autostart" in
 </plist>
 PLIST_EOF
         launchctl bootout "gui/$(id -u)/com.emby.discordpresence" 2>/dev/null || true
+        # bootout is asynchronous — bootstrapping before it finishes fails
+        # with "Input/output error", so wait for the service to be gone.
+        for _ in 1 2 3 4 5; do
+            launchctl print "gui/$(id -u)/com.emby.discordpresence" >/dev/null 2>&1 || break
+            sleep 1
+        done
         launchctl bootstrap "gui/$(id -u)" "$PLIST"
         echo "Installed and running — it starts automatically at login."
         echo "Live logs: double-click Logs.command"
