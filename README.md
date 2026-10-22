@@ -60,16 +60,24 @@ updates within seconds. Make sure the Discord **desktop app** is running
 1. **Install Python** from [python.org/downloads](https://www.python.org/downloads/).
    On the first installer screen, tick **"Add python.exe to PATH"** before
    clicking Install.
-2. **Download this app:** on the GitHub page click the green **Code**
-   button → **Download ZIP**, and extract it somewhere permanent, e.g.
-   `C:\Emby` (or `git clone https://github.com/iiMas1/Emby.git` if you
-   have Git).
-3. **Double-click `install.bat`** and answer the prompts (Plex or Emby,
-   sign in, auto-start) — it sets everything up, starts the app, and can
-   make it start automatically every time you log on. That's it.
+2. **Copy this one line into PowerShell** (right-click Start → "Terminal"
+   or "Windows PowerShell"), press Enter, and answer the prompts (Plex or
+   Emby, sign in, auto-start) — it downloads the latest version into
+   `~\Emby` and sets everything up. That's it.
 
-   **Updating later:** double-click `update.bat` — it downloads the
-   latest version (your settings are kept) and re-runs the installer.
+   ```powershell
+   $d="$HOME\Emby"; mkdir -Force $d >$null; iwr -useb https://codeload.github.com/iiMas1/Emby/zip/refs/heads/master -OutFile "$env:TEMP\emby.zip"; Expand-Archive -Force "$env:TEMP\emby.zip" "$env:TEMP\emby-x"; Copy-Item -Force -Recurse "$env:TEMP\emby-x\Emby-master\*" $d; Set-Location $d; cmd /c install.bat
+   ```
+
+   Running the same line again later updates to the latest version and
+   keeps your settings.
+
+   <details><summary>Prefer clicking? ZIP method</summary>
+
+   Download the ZIP from the green **Code** button, extract it somewhere
+   permanent (e.g. `C:\Emby`), and double-click `install.bat`. To update
+   later, double-click `update.bat` — your settings are kept.
+   </details>
 
    <details><summary>Prefer the terminal? Manual steps</summary>
 
