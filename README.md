@@ -68,6 +68,9 @@ updates within seconds. Make sure the Discord **desktop app** is running
    sign in, auto-start) — it sets everything up, starts the app, and can
    make it start automatically every time you log on. That's it.
 
+   **Updating later:** double-click `update.bat` — it downloads the
+   latest version (your settings are kept) and re-runs the installer.
+
    <details><summary>Prefer the terminal? Manual steps</summary>
 
    ```powershell
