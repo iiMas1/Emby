@@ -19,7 +19,7 @@ import certifi
 import requests
 import websocket
 from dotenv import load_dotenv
-from pypresence import ActivityType, Presence
+from pypresence import ActivityType, Presence, StatusDisplayType
 from pypresence.exceptions import DiscordError, DiscordNotFound, PipeClosed
 
 TICKS_PER_SECOND = 10_000_000  # Emby reports positions in 100-nanosecond ticks
@@ -450,6 +450,9 @@ def build_presence(now, config):
     logo = config["server_type"]  # Discord asset keys: "emby" and "plex"
     presence = {
         "activity_type": ActivityType.LISTENING if media_type == "Audio" else ActivityType.WATCHING,
+        # The friends-list line shows the activity name by default, which
+        # we keep invisible — point it at details (the work title) instead.
+        "status_display_type": StatusDisplayType.DETAILS,
         "name": clamp(name) if name else None,
         "details": clamp(details),
         "state": clamp(state) if state else None,
