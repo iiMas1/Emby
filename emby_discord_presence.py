@@ -412,11 +412,11 @@ def clamp(text, fallback="Media"):
 def build_presence(now, config):
     """Translate the normalized now-playing state into Discord fields.
 
-    Spotify-style card: a "Watching <work title>" (or "Listening to ...")
-    header, the episode/year detail as the bold line, and a progress bar
-    with elapsed/total times from the start+end timestamps. Paused
-    playback never reaches here — the presence is hidden entirely, just
-    like Spotify does when you pause.
+    Spotify-style card: a bare "Watching" / "Listening to" header, the
+    work's title as the bold line, episode/year details under it, and a
+    progress bar with elapsed/total times from the start+end timestamps.
+    While paused, the detail line gains a ⏸ marker and the progress bar
+    is dropped (Discord timers can't freeze), returning on resume.
     """
     media_type = now["media_type"]
 
@@ -445,6 +445,9 @@ def build_presence(now, config):
         details = now["title"]
         state = f"({now['year']})" if now["year"] else "Movie"
 
+    if now["is_paused"]:
+        state = f"⏸ Paused · {state}" if state else "⏸ Paused"
+
     # Real poster/album art when available; never in privacy mode.
     image = None if config["hide_details"] else now["artwork"]
     logo = config["server_type"]  # Discord asset keys: "emby" and "plex"
@@ -464,7 +467,7 @@ def build_presence(now, config):
     presence = {key: value for key, value in presence.items() if value is not None}
 
     # Spotify-style progress bar: start+end together render elapsed/total.
-    if now["position_s"] is not None and now["runtime_s"]:
+    if not now["is_paused"] and now["position_s"] is not None and now["runtime_s"]:
         started = int(time.time()) - now["position_s"]
         presence["start"] = started
         presence["end"] = started + now["runtime_s"]
@@ -515,6 +518,7 @@ def main():
 
     rpc = connect_discord(config["discord_client_id"])
     last_shown = None
+    was_paused = False
 
     while True:
         try:
@@ -523,15 +527,15 @@ def main():
             log.warning("Could not reach %s: %s", config["server_name"], error)
             now = None
 
-        # Spotify-style: pausing hides the presence entirely instead of
-        # showing a frozen card with a drifting progress bar.
-        if now and now["is_paused"]:
-            now = None
-
         try:
             if now:
                 presence = build_presence(now, config)
                 shown = (presence.get("name", ""), presence["details"], presence.get("state", ""))
+                if now["is_paused"] and not was_paused:
+                    # Discord keeps counting down the previous timestamps on
+                    # its own; a plain update doesn't always drop them.
+                    rpc.clear()
+                was_paused = now["is_paused"]
                 rpc.update(**presence)
                 if shown != last_shown:
                     log.info("Now playing: %s",
@@ -539,12 +543,14 @@ def main():
                 last_shown = shown
             elif last_shown is not None:
                 rpc.clear()
-                log.info("Playback stopped or paused, presence cleared.")
+                log.info("Playback stopped, presence cleared.")
                 last_shown = None
+                was_paused = False
         except (PipeClosed, DiscordError, ConnectionError, BrokenPipeError):
             log.warning("Lost connection to Discord, reconnecting...")
             rpc = connect_discord(config["discord_client_id"])
             last_shown = None
+            was_paused = False
 
         time.sleep(config["poll_interval"])
 
