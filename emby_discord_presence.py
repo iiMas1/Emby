@@ -499,6 +499,17 @@ def main():
     # Shared (non-admin) Plex accounts can't poll /status/sessions (403).
     # The notifications websocket still reports the account's own playback,
     # so switch to it automatically.
+    listener = None
+
+    def switch_to_alerts():
+        nonlocal fetch_now_playing, listener
+        log.info("No admin access to sessions — using websocket notifications instead.")
+        listener = PlexAlertListener(config)
+        fetch_now_playing = lambda cfg: fetch_plex_alerts(cfg, listener)
+        # Events arrive pushed and reads are in-memory, so a fast
+        # tick costs nothing and reacts to pause/resume promptly.
+        config["poll_interval"] = min(config["poll_interval"], 3)
+
     if config["server_type"] == "plex":
         try:
             probe = requests.get(
@@ -507,12 +518,7 @@ def main():
                 timeout=10,
             )
             if probe.status_code in (401, 403):
-                log.info("No admin access to sessions — using websocket notifications instead.")
-                listener = PlexAlertListener(config)
-                fetch_now_playing = lambda cfg: fetch_plex_alerts(cfg, listener)
-                # Events arrive pushed and reads are in-memory, so a fast
-                # tick costs nothing and reacts to pause/resume promptly.
-                config["poll_interval"] = min(config["poll_interval"], 3)
+                switch_to_alerts()
         except requests.RequestException as error:
             log.warning("Could not probe %s yet: %s", config["server_name"], error)
 
@@ -524,7 +530,16 @@ def main():
         try:
             now = fetch_now_playing(config)
         except (requests.RequestException, ValueError) as error:
-            log.warning("Could not reach %s: %s", config["server_name"], error)
+            # A 401/403 at runtime means the startup probe was missed (e.g.
+            # the network wasn't up yet) — switch to websocket mode now
+            # instead of warning forever.
+            if (config["server_type"] == "plex" and listener is None
+                    and isinstance(error, requests.HTTPError)
+                    and error.response is not None
+                    and error.response.status_code in (401, 403)):
+                switch_to_alerts()
+            else:
+                log.warning("Could not reach %s: %s", config["server_name"], error)
             now = None
 
         try:
