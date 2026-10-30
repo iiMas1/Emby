@@ -243,6 +243,8 @@ def fetch_emby(config):
             "artists": item.get("Artists", []),
             "album": item.get("Album"),
             "is_paused": play_state.get("IsPaused", False),
+            "is_rewatch": stable_rewatch(item.get("Id"),
+                                         item.get("UserData", {}).get("PlayCount", 0) > 0),
             "position_s": position // TICKS_PER_SECOND if position is not None else None,
             "runtime_s": runtime // TICKS_PER_SECOND if runtime else None,
             "artwork": emby_artwork(item, config),
@@ -267,6 +269,8 @@ def plex_now_playing(item, config, position_ms, is_paused):
         "artists": [item["grandparentTitle"]] if media_type == "Audio" and item.get("grandparentTitle") else [],
         "album": item.get("parentTitle") if media_type == "Audio" else None,
         "is_paused": is_paused,
+        "is_rewatch": stable_rewatch(item.get("ratingKey"),
+                                     item.get("viewCount", 0) > 0),
         "position_s": position_ms // 1000 if position_ms is not None else None,  # Plex uses milliseconds
         "runtime_s": runtime // 1000 if runtime else None,
         "artwork": plex_artwork(item, media_type, config),
@@ -401,6 +405,21 @@ def fetch_plex_alerts(config, listener):
                             session["state"] == "paused")
 
 
+_rewatch_seen = {}
+
+
+def stable_rewatch(item_key, currently_watched):
+    """Rewatch flag captured when the item is first seen this session.
+
+    Servers mark an item watched at ~90%, which would flip a first watch
+    to "rewatching" near the end — freeze the answer per item instead.
+    """
+    if item_key not in _rewatch_seen:
+        _rewatch_seen.clear()  # only the current item matters
+        _rewatch_seen[item_key] = bool(currently_watched)
+    return _rewatch_seen[item_key]
+
+
 def clamp(text, fallback="Media"):
     """Discord requires presence strings between 2 and 128 characters."""
     text = (text or fallback).strip() or fallback
@@ -444,6 +463,9 @@ def build_presence(now, config):
     else:  # Movie and anything else
         details = now["title"]
         state = f"({now['year']})" if now["year"] else "Movie"
+
+    if not config["hide_details"] and now.get("is_rewatch"):
+        state = f"{state} · 🔁 Rewatch" if state else "🔁 Rewatch"
 
     if now["is_paused"]:
         state = f"⏸ Paused · {state}" if state else "⏸ Paused"

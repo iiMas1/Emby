@@ -19,8 +19,10 @@ Watching
   LAN-only Emby servers re-host posters on Imgur instead (set
   `IMGUR_CLIENT_ID` in `.env` — see below). Without either, you get the
   server logo.
-- **Paused or stopped** → the status disappears, just like Spotify, and
-  comes back when you resume
+- **Rewatching** → a 🔁 Rewatch tag appears on anything you've already
+  seen, straight from your server's watch history
+- **Paused** → a ⏸ Paused marker appears and the progress bar pauses;
+  stopping hides the status until you play something again
 
 ## How it works (and why it's secure)
 
